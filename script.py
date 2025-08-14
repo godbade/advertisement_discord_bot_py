@@ -7,103 +7,78 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Список ID ролей, которым разрешено использовать команду anns
 ALLOWED_ROLE_IDS = [
-    1250114225616064512,
+    1250114225616064512,  # ID роли из вашего примера
+    # Добавьте сюда другие ID ролей при необходимости
 ]
 
-# Словарь для хранения текущего языка пользователя
-user_languages = {}  # user_id: 'ru'/'en'
-default_language = 'ru'  # Язык по умолчанию
 
-# Тексты на разных языках
-translations = {
-    'ru': {
-        'no_role': "У вас нет прав для использования этой команды.",
-        'no_message': "Пожалуйста, введите сообщение после команды. Например: `!anns привет` или `!anns #канал привет`",
-        'channel_sent': "Сообщение отправлено в канал {channel}.",
-        'channel_not_found': "Указанный канал не найден.",
-        'no_permission': "У меня нет прав на отправку сообщений в канал {channel}.",
-    },
-    'en': {
-        'no_role': "You do not have permission to use this command.",
-        'no_message': "Please enter a message after the command. For example: `!anns hello` or `!anns #channel hello`",
-        'channel_sent': "Message sent to channel {channel}.",
-        'channel_not_found': "The specified channel was not found.",
-        'no_permission': "I don't have permission to send messages to channel {channel}.",
-    }
-}
-
-
-def get_translation(user_id, key):
-    """Получает перевод для пользователя."""
-    language = user_languages.get(user_id, default_language)
-    return translations[language][key]
-
-
+# Проверка наличия роли у пользователя
 def has_allowed_role():
     async def predicate(ctx):
+        # Проверяем, есть ли у пользователя хотя бы одна из разрешенных ролей
         return any(role.id in ALLOWED_ROLE_IDS for role in ctx.author.roles)
 
     return commands.check(predicate)
 
 
 @bot.command()
-async def lang(ctx, language):
-    """Переключает язык пользователя."""
-    if language in ['ru', 'en']:
-        user_languages[ctx.author.id] = language
-        await ctx.send(f"Язык переключен на {language}.")
-    else:
-        await ctx.send("Неверный язык. Используйте 'ru' или 'en'.")
-
-
-@bot.command()
 @has_allowed_role()
 async def anns(ctx, *, message=""):
+    # Проверяем, было ли введено сообщение
     if not message:
-        await ctx.send(get_translation(ctx.author.id, 'no_message'))
+        await ctx.send(
+            "Пожалуйста, введите сообщение после команды. Например: `!anns привет` или `!anns #канал привет`")
         return
 
+    # Проверяем, есть ли упоминание канала в начале сообщения
     channel_mention_pattern = r'^<#(\d+)>\s+'
     channel_match = re.match(channel_mention_pattern, message)
 
     if channel_match:
+        # Если указан канал, извлекаем ID канала и текст сообщения
         channel_id = int(channel_match.group(1))
         message_text = re.sub(channel_mention_pattern, '', message)
 
+        # Получаем канал по ID
         target_channel = bot.get_channel(channel_id)
 
         if target_channel:
+            # Проверяем права на отправку сообщений в указанный канал
             permissions = target_channel.permissions_for(ctx.guild.me)
             if not permissions.send_messages:
-                await ctx.send(get_translation(ctx.author.id, 'no_permission').format(channel=target_channel.mention))
+                await ctx.send(f"У меня нет прав на отправку сообщений в канал {target_channel.mention}.")
                 return
 
+            # Отправляем сообщение в указанный канал
             await target_channel.send(message_text)
 
-            confirmation = await ctx.send(
-                get_translation(ctx.author.id, 'channel_sent').format(channel=target_channel.mention))
+            # Отправляем подтверждение
+            confirmation = await ctx.send(f"Сообщение отправлено в канал {target_channel.mention}.")
             await discord.utils.sleep_until(discord.utils.utcnow() + discord.utils.timedelta(seconds=5))
-            await confirmation.delete()
+            await confirmation.delete()  # Удаляем подтверждение через 5 секунд
         else:
-            await ctx.send(get_translation(ctx.author.id, 'channel_not_found'))
+            await ctx.send("Указанный канал не найден.")
             return
     else:
+        # Если канал не указан, отправляем сообщение в текущий канал
         await ctx.send(message)
 
+    # Удаляем сообщение с командой
     await ctx.message.delete()
 
 
+# Обработка ошибки, если у пользователя нет нужной роли
 @anns.error
 async def anns_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
-        error_message = await ctx.send(get_translation(ctx.author.id, 'no_role'))
-        await ctx.message.delete()
+        # Отправляем сообщение об ошибке и удаляем его через 5 секунд
+        error_message = await ctx.send("У вас нет прав для использования этой команды.")
+        await ctx.message.delete()  # Удаляем сообщение с командой
         await discord.utils.sleep_until(discord.utils.utcnow() + discord.utils.timedelta(seconds=5))
-        await error_message.delete()
-
+        await error_message.delete()  # Удаляем сообщение об ошибке через 5 секунд
 
 
 
 bot.run('ENTER YOUR BOT TOKEN')
-
